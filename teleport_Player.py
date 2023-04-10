@@ -9,7 +9,7 @@ from mcdreforged.api.command import *
 
 PLUGIN_METADATA = {
     "id": "teleport",
-    "version": "beta 0.1",
+    "version": "beta 0.2",
     "name": "Teleport_Player",
     "author": "ranrannnnnnn",
     "description": "好耶",
