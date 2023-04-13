@@ -82,14 +82,16 @@ def other_player_tp1(src, ctx, server):  # tp模式1
                         server.tell(player, f'§7[server] 你的传送请求已超时')
                         server.tell(player, f'§7[server] 玩家 {player} 的传送请求已超时')
                         del accept[other_player]
-                        server.say(f'线程结束')  # 调试信息
+                        if debug:
+                            server.say(f'线程结束')  # 调试信息
                         break
                     if accept[other_player]:
                         server.execute(f'tp {other_player} {player}')
                         server.tell(other_player, f'§7[server] 传送中...')
                         server.tell(player, f'§7[server] {other_player}悄悄的来到了你的身边...')
                         del accept[other_player]
-                        server.say(f'线程结束')  # 调试信息
+                        if debug:
+                            server.say(f'线程结束')  # 调试信息
                     time.sleep(1)
                 break
         else:
@@ -100,28 +102,52 @@ def other_player_tp1(src, ctx, server):  # tp模式1
 
 
 def other_player_tp(src, ctx, server):  # tp模式2
-    global accept_queue, accept, tp_queue
+    """code"""
+
+
+def accept_command(src, ctx, server):
+    global accept_queue, debug
     player = src.player if src.is_player else 'Console'
-    other_player = ctx['player']
-    accept[other_player] = False
-    tp_queue.put(accept)
-    time_start = time.time()
-    time_end = time_start + 30
-    server.tell(other_player, f'§7[server] 玩家 {player} 请求将您传送至他身边,输入"!!accept"接受邀请\n'
-                              f'§7[server] 你拥有30秒钟的时间同意邀请')
-    server.tell(player, '§7[server] 申请已发出')
-    server.say(f'计时器已启动 start: {time_start} end: {time_end}')
-    accept = accept_queue.get()
-    if accept[other_player]:
-        server.execute(f'tp {other_player} {player}')
-        server.tell(other_player, f'§7[server] 传送中...')
-        server.tell(player, f'§7[server] {other_player}悄悄的来到了你的身边...')
-        del accept[other_player]
-        server.say(f'线程结束')
+    for i in range(10):
+        try:
+            accept = accept_queue.get(block=False)
+        except Exception as e:
+            server.tell(player, f'{e},在获取变量"accept"的值时出错,程序可能无法运行\n'
+                                f'如果该情况持续发生请上报给管理员\n'
+                                f'正在尝试重新获取变量"accept"...\n'
+                                f'这是第 {i} 次尝试')
+            time.sleep(5)
+        else:
+            if player in accept:
+                accept[player] = True
+                for i in range(10):
+                    try:
+                        accept_queue.put(accept, block=False)
+                    except Exception as e:
+                        server.tell(player, f'{e},在将变量"accept"添加进队列"accept_queue"时出错,程序可能无法运行\n'
+                                            f'如果该情况持续发生请上报给管理员\n'
+                                            f'正在尝试重新获取变量"accept"...\n'
+                                            f'这是第 {i} 次尝试')
+                    else:
+                        if debug:
+                            server.say(f'线程 "{player}" 正常结束')  # 调试信息
+                else:
+                    server.tell(player, f'ERROR: 在将变量"accept"添加进队列"accept_queue"时出错,程序可能无法运行\n'
+                                        f'尝试次数已达到上限,接受失败')
+                    if debug:
+                        server.say(f'线程 "{player}" 非正常结束')  # 调试信息
+            else:
+                server.tell(player, f'你还没有传送请求哦~')
+                server.say(f'线程 "{player}" 正常结束')  # 调试信息
+    else:
+        server.tell(player, f'ERROR: 在获取变量"accept"的值时出错,程序可能无法运行\n'
+                            f'尝试次数已达到上限,接受失败')
+        if debug:
+            server.say(f'线程 "player" 非正常结束')  # 调试信息
 
 
 def on_load(server: PluginServerInterface, old):
-    global q, accept, debug
+    global accept, debug
     server.logger.info('传送插件加载成功')
     builder = SimpleCommandBuilder()
     path = os.path.join('config', 'Teleport_Player')
@@ -185,18 +211,10 @@ def on_load(server: PluginServerInterface, old):
     def teleport_help(server: PluginServerInterface):
         server.reply(f'[teleport] {help_message}')
 
-    def accept_command(src, ctx):
-        global accept_queue, accept, tp_queue
+    def build_accept_thread(src, ctx):
         player = src.player if src.is_player else 'Console'
-        if tp_queue.full():
-            accept = tp_queue.get()
-            if player in accept:
-                accept[player] = True
-                accept_queue.put(accept)
-            else:
-                server.tell(player, '§7[server] 没有任何一个人向你发出申请...')
-        else:
-            server.tell(player, '§7[server] 没有任何一个人向你发出申请...')
+        thread1 = threading.Thread(target=accept_command, args=(src, ctx, server), name=player)
+        thread1.start()
 
     def debug_mode(src, ctx):
         global debug
@@ -217,7 +235,7 @@ def on_load(server: PluginServerInterface, old):
     builder.command('!!teleport other_player <player>', build_thread)
     builder.command('!!home', home)
     builder.command('!!sethome <x> <y> <z>', set_home)
-    builder.command('!!accept', accept_command)
+    builder.command('!!accept', build_accept_thread)
     builder.command('!!debug', debug_mode)
     builder.command('!!...', config_tp_mode)
     builder.arg('player', Text)
